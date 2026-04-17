@@ -7,6 +7,13 @@ import {
   MAX_TODAY_TASKS,
 } from '../types';
 
+function getLocalDateKey(date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function pickRandomStockCandidateId(
   tasks: Task[],
   excludeId?: string | null,
@@ -19,7 +26,7 @@ function pickRandomStockCandidateId(
 }
 
 function normalizeLoadedState(parsed: Record<string, unknown>): AppState {
-  const today = new Date().toISOString().split('T')[0];
+  const today = getLocalDateKey();
   const stockTasks = (parsed.stockTasks as Task[]) ?? [];
   let stockCandidateId = (parsed.stockCandidateId as string | null | undefined) ?? null;
   if (stockTasks.length === 0) {
@@ -52,7 +59,7 @@ export function useAppState() {
     return {
       todayTasks: [],
       stockTasks: [],
-      lastResetDate: new Date().toISOString().split('T')[0],
+      lastResetDate: getLocalDateKey(),
       stockCandidateId: null,
     };
   });
@@ -63,30 +70,56 @@ export function useAppState() {
 
   // 日付変更で今日をリセット + ストック期限切れ除去 + 候補IDの整合
   useEffect(() => {
-    const now = Date.now();
-    const threeDaysMs = STOCK_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
-    const today = new Date().toISOString().split('T')[0];
+    const reconcileState = () => {
+      const now = Date.now();
+      const threeDaysMs = STOCK_EXPIRY_DAYS * 24 * 60 * 60 * 1000;
+      const today = getLocalDateKey();
 
-    setState(prev => {
-      const isNewDay = prev.lastResetDate !== today;
-      let next: AppState = {...prev};
-      if (isNewDay) {
-        next = {...next, todayTasks: [], lastResetDate: today};
-      }
-      const validStocks = next.stockTasks.filter(
-        t => now - t.createdAt < threeDaysMs,
-      );
-      next = {...next, stockTasks: validStocks};
-      if (validStocks.length === 0) {
-        next.stockCandidateId = null;
-      } else if (
-        !next.stockCandidateId ||
-        !validStocks.some(t => t.id === next.stockCandidateId)
-      ) {
-        next.stockCandidateId = pickRandomStockCandidateId(validStocks);
-      }
-      return next;
-    });
+      setState(prev => {
+        const isNewDay = prev.lastResetDate !== today;
+        const nextTodayTasks = isNewDay ? [] : prev.todayTasks;
+        const validStocks = prev.stockTasks.filter(
+          t => now - t.createdAt < threeDaysMs,
+        );
+        const stockChanged = validStocks.length !== prev.stockTasks.length;
+
+        let nextCandidateId = prev.stockCandidateId;
+        if (validStocks.length === 0) {
+          nextCandidateId = null;
+        } else if (
+          !nextCandidateId ||
+          !validStocks.some(t => t.id === nextCandidateId)
+        ) {
+          nextCandidateId = pickRandomStockCandidateId(validStocks);
+        }
+
+        const candidateChanged = nextCandidateId !== prev.stockCandidateId;
+        if (!isNewDay && !stockChanged && !candidateChanged) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          todayTasks: nextTodayTasks,
+          stockTasks: validStocks,
+          lastResetDate: isNewDay ? today : prev.lastResetDate,
+          stockCandidateId: nextCandidateId,
+        };
+      });
+    };
+
+    reconcileState();
+    const intervalId = window.setInterval(reconcileState, 60 * 1000);
+    document.addEventListener('visibilitychange', reconcileState);
+    window.addEventListener('focus', reconcileState);
+    window.addEventListener('pageshow', reconcileState);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', reconcileState);
+      window.removeEventListener('focus', reconcileState);
+      window.removeEventListener('pageshow', reconcileState);
+    };
   }, []);
 
   const addToStock = (content: string) => {
