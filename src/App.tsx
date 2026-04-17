@@ -13,7 +13,8 @@ import { MAX_TODAY_TASKS } from './types';
 export default function App() {
   const [activeTab, setActiveTab] = useState<'today' | 'prep'>('today');
   const [stockInput, setStockInput] = useState('');
-  const { state, addToStock, moveRandomToToday, completeTask, skipTask } = useAppState();
+  const { state, addToStock, moveRandomToToday, completeTask, skipTask, cycleTodayTasks } =
+    useAppState();
 
   const activeTodayTasks = useMemo(() => 
     state.todayTasks.filter(t => t.status === 'pending'), 
@@ -42,7 +43,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-on-surface font-sans selection:bg-primary selection:text-on-primary flex flex-col overflow-hidden relative">
+    <div className="min-h-screen bg-background text-on-surface font-sans selection:bg-primary selection:text-on-primary flex flex-col overflow-x-hidden relative">
       {/* Stars Background */}
       <div className="fixed inset-0 stars pointer-events-none -z-10" />
 
@@ -73,7 +74,7 @@ export default function App() {
               className="w-full h-full flex flex-col items-center"
             >
               {/* Card Container (Stage) */}
-              <div className="relative w-full h-[450px] flex items-center justify-center perspective-1000">
+              <div className="relative w-full min-h-[460px] flex items-center justify-center perspective-1000 overflow-visible px-2">
                 <AnimatePresence>
                   {activeTodayTasks.length > 0 ? (
                     activeTodayTasks.map((task, idx) => (
@@ -83,6 +84,7 @@ export default function App() {
                         index={idx}
                         total={activeTodayTasks.length}
                         onComplete={() => completeTask(task.id)}
+                        onCycle={cycleTodayTasks}
                       />
                     ))
                   ) : (
